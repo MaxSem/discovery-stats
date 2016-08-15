@@ -1,0 +1,8 @@
+{
+    "statsdHost": null,
+    "statsdPort": 8126,
+    "categories": {
+        "kartographer-tracking-category": "ext.kartographer.pages.%WIKI%",
+        "graph-tracking-category": "ext.graph.pages.%WIKI%"
+    }
+}

@@ -1,80 +1,68 @@
 <?php
 
-if ( count( $argv ) < 2 ) {
-    echo 'Usage: php tracking-category-count.php <tracking category message key> [graphite key]';
-    die( 1 );
+namespace DiscoveryStats;
+
+use Liuggio\StatsdClient\StatsdClient;
+use Liuggio\StatsdClient\Sender\SocketSender;
+use Liuggio\StatsdClient\Service\StatsdService;
+
+require_once( 'vendor/autoload.php' );
+
+$statsd = null;
+
+$wikiBlacklist = [
+    'ukwikimedia', // redirected
+];
+
+$configFile = count( $argv ) > 1
+    ? $argv[1]
+    : 'config.json';
+
+$config = json_decode( file_get_contents( $configFile ) );
+$config->categories = (array)$config->categories;
+$categoryKeys = array_keys( $config->categories );
+
+if ( $config->statsdHost ) {
+    $sender = new SocketSender( $config->statsdHost, $config->statsdHost, 'tcp' );
+    $client = new StatsdClient( $sender );
+    $statsd = new StatsdService( $client );
 }
 
-$trackingCategoryKey = $argv[1];
-$graphiteKey = isset( $argv[2] ) ? $argv[2] : null;
+function recordToGraphite( $wiki, $metric, $count ) {
+    global $statsd, $config;
 
-ini_set( 'user_agent', 'Discovery team statistics' );
-
-function apiGet( $url, $params ) {
-    $params['format'] = 'json';
-    $params['formatversion'] = 2;
-
-    $arr = [];
-    foreach ( $params as $key => $value ) {
-        $arr[] = $key . '=' . urlencode( $value );
-    }
-    $paramsStr = implode( '&', $arr );
-
-    return file_get_contents( "{$url}/w/api.php?{$paramsStr}" );
-}
-
-function recordToGraphite( $dbname, $count ) {
-    global $graphiteKey;
-
-    if ( !$graphiteKey ) {
+    if ( !$statsd ) {
         return;
     }
 
-    $key = str_replace( '%WIKI%', $dbname, $graphiteKey );
+    $key = str_replace( '%WIKI%', $wiki, $config->categories[$metric] );
 
-    exec( "echo \"$key $count `date +%s`\" | nc -q0 $host $port" );
+    $statsd->set( $key, $count );
 }
 
-// Skip header
-$wikis = array_slice( file( 'wikis.tsv' ), 1 );
+$matrix = new SiteMatrix;
 
-$total = 0;
-foreach ( $wikis as $line ) {
-    list( $dbname, $url, ) = explode( "\t", $line );
-
-    if ( $url == 'NULL' ) {
-        continue; // https://phabricator.wikimedia.org/T142759
+$totalCounts = array_fill_keys( $categoryKeys, 0 );
+foreach ( $matrix->getSites() as $site ) {
+    if ( $site->isPrivate() || in_array( $site->getDbName(), $wikiBlacklist ) ) {
+        continue;
     }
+    $siteKey = $site->getFamily() . '.' . $site->getCode();
+    $tracking = new TrackingCategories( $site );
 
-    // Get local tracking category name. Parse it because it might contain
-    // wikitext e.g. {{#ifeq:{{NAMESPACE}}||Articles with maps|Pages with maps}}.
-    // In case such difference is present, care about mainspace only.
-    $siteinfo = json_decode( apiGet( $url, [
-        'action' => 'parse',
-        'title' => 'foo',
-        'contentmodel' => 'wikitext',
-        'text' => "{{int:$trackingCategoryKey}}",
-    ] ) );
-
-    $category = trim( htmlspecialchars_decode( strip_tags( $siteinfo->parse->text ) ) );
-    if ( $category[0] == '<' ) {
-        continue; // Extension not installed
+    $counts = $tracking->getCounts( $categoryKeys );
+    foreach ( $counts as $metric => $count ) {
+        $totalCounts[$metric] += $count;
+        recordToGraphite( $siteKey, $metric, $count );
     }
-
-    $categoryInfo = json_decode( apiGet( $url, [
-        'action' => 'query',
-        'prop' => 'categoryinfo',
-        'titles' => "Category:$category",
-    ] ) );
-
-    $count = isset( $categoryInfo->query->pages[0]->categoryinfo )
-        ? $categoryInfo->query->pages[0]->categoryinfo->size
-        : 0;
-
-    $total += $count;
-
-    echo "$dbname $category $count\n";
-    recordToGraphite( $dbname, $count );
+    echo "{$site->getDbName()} "; var_dump($counts);
 }
 
-recordToGraphite( 'total', $total );
+foreach ( $totalCounts as $metric => $count ) {
+    recordToGraphite( 'total', $metric, $count );
+}
+var_dump($totalCounts);
+
+if ( $statsd ) {
+    $statsd->flush();
+}

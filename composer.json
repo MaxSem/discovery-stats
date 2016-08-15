@@ -1,0 +1,19 @@
+{
+	"description": "Discovery team's statistics thingie",
+	"license": "The Unlicense",
+	"homepage": "https://www.mediawiki.org/wiki/Wikimedia_Discovery",
+	"authors": [
+		{
+			"name": "Max Semenik"
+		}
+	],
+	"autoload": {
+		"classmap": [
+			"src/"
+		]
+	},
+	"require": {
+		"php": ">=5.5",
+		"liuggio/statsd-php-client": "^1.0"
+	}
+}
