@@ -8,36 +8,26 @@ use Liuggio\StatsdClient\Service\StatsdService;
 
 require_once( 'vendor/autoload.php' );
 
-$statsd = null;
-
 $wikiBlacklist = [
     'ukwikimedia', // redirected
 ];
 
-$configFile = count( $argv ) > 1
-    ? $argv[1]
-    : 'config.json';
+$debug = in_array( '--debug', $argv );
 
-$config = json_decode( file_get_contents( $configFile ) );
+$config = json_decode( file_get_contents( 'config.json' ) );
 $config->categories = (array)$config->categories;
 $categoryKeys = array_keys( $config->categories );
 
-if ( $config->statsdHost ) {
-    $sender = new SocketSender( $config->statsdHost, $config->statsdHost, 'tcp' );
-    $client = new StatsdClient( $sender );
-    $statsd = new StatsdService( $client );
-}
-
 function recordToGraphite( $wiki, $metric, $count ) {
-    global $statsd, $config;
+    global $config;
 
-    if ( !$statsd ) {
+    if ( !$config->graphiteHost || !$config->graphitePort ) {
         return;
     }
 
     $key = str_replace( '%WIKI%', $wiki, $config->categories[$metric] );
 
-    $statsd->set( $key, $count );
+    exec( "echo \"$metric $count `date +%s`\" | nc -q0 {$config->graphiteHost} {$config->graphitePort}" );
 }
 
 $matrix = new SiteMatrix;
@@ -55,14 +45,15 @@ foreach ( $matrix->getSites() as $site ) {
         $totalCounts[$metric] += $count;
         recordToGraphite( $siteKey, $metric, $count );
     }
-    echo "{$site->getDbName()} "; var_dump($counts);
+    if ( $debug ) {
+        echo "{$site->getDbName()} "; var_dump($counts);
+    }
 }
 
 foreach ( $totalCounts as $metric => $count ) {
     recordToGraphite( 'total', $metric, $count );
 }
-var_dump($totalCounts);
 
-if ( $statsd ) {
-    $statsd->flush();
+if ( $debug ) {
+    var_dump($totalCounts);
 }

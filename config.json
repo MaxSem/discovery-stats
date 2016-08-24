@@ -1,6 +1,6 @@
 {
-    "statsdHost": null,
-    "statsdPort": 8126,
+    "graphiteHost": "graphite.eqiad.wmnet",
+    "graphitePort": 8126,
     "categories": {
         "kartographer-tracking-category": "ext.kartographer.pages.%WIKI%",
         "graph-tracking-category": "ext.graph.pages.%WIKI%"

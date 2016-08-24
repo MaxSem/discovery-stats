@@ -13,7 +13,6 @@
 		]
 	},
 	"require": {
-		"php": ">=5.5",
-		"liuggio/statsd-php-client": "^1.0"
+		"php": ">=5.5"
 	}
 }
